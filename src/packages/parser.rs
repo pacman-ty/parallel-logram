@@ -287,7 +287,16 @@ fn test_dictionary_builder_process_line_lookahead_is_some() {
 }
 
 pub fn parse_raw(raw_fn: String, lf:&LogFormat) -> (HashMap<String, i32>, HashMap<String, i32>, Vec<String>) {
-    let (double_dict, triple_dict, all_token_list) = dictionary_builder(raw_fn, format_string(&lf), censored_regexps(&lf));
+    let num_threads = std::cmp::max(1, num_threads);
+
+    let (double_dict, triple_dict, all_token_list) = if num_threads <= 1 {
+        dictionary_builder(raw_fn, format_string(&lf), censored_regexps(&lf))
+    } else if single_map {
+        dictionary_builder_separate_maps(raw_fn, format_string(&lf), censored_regexps(&lf), num_threads)
+    } else {
+        dictionary_builder_concurrent_maps(raw_fn, format_string(&lf), censored_regexps(&lf), num_threads)
+    };
+
     println!("double dictionary list len {}, triple {}, all tokens {}", double_dict.len(), triple_dict.len(), all_token_list.len());
     return (double_dict, triple_dict, all_token_list);
 }
