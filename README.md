@@ -4,7 +4,7 @@ A high-performance Rust implementation of Logram— extracting structure from un
 
 Accelerates n-gram dictionary construction using multi-threading and concurrent hash maps, enabling fast identification of static and dynamic log tokens in massive logs. 
 
---- 
+___
 
 Most code lives in parser.rs. A bit of code is in main.rs.
 
