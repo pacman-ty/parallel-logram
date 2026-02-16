@@ -132,6 +132,9 @@ fn main() {
     };
     let cutoff = args.cutoff.unwrap();
 
+    let num_threads = std::cmp::max(1, args.num_threads.unwrap_or(8) as usize);
+    let single_map = args.single_map.unwrap_or(false);
+
     let (double_dict, triple_dict, _all_token_list) =
         packages::parser::parse_raw(input_fn.unwrap(), &log_format);
 
