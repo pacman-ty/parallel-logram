@@ -136,7 +136,7 @@ fn main() {
     let single_map = args.single_map.unwrap_or(false);
 
     let (double_dict, triple_dict, _all_token_list) =
-        packages::parser::parse_raw(input_fn.unwrap(), &log_format);
+        packages::parser::parse_raw(input_fn.unwrap(), &log_format, num_threads, single_map);
 
     view_double_and_triple_dicts(&double_dict, &triple_dict);
 

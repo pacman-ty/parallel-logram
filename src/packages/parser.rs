@@ -4,6 +4,8 @@ use std::path::Path;
 use regex::Regex;
 use std::collections::HashMap;
 use std::collections::BTreeSet;
+use dashmap::DashMap;
+use std::thread;
 
 use crate::LogFormat;
 use crate::LogFormat::Linux;
@@ -286,7 +288,227 @@ fn test_dictionary_builder_process_line_lookahead_is_some() {
     assert_eq!(trpl, trpl_oracle);
 }
 
-pub fn parse_raw(raw_fn: String, lf:&LogFormat) -> (HashMap<String, i32>, HashMap<String, i32>, Vec<String>) {
+fn read_all_lines(filename: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Ok(file_lines) = read_lines(filename) {
+        for line in file_lines {
+            if let Ok(l) = line {
+                lines.push(l);
+            }
+        }
+    }
+    lines
+}
+
+fn get_initial_prev(all_lines: &[String], start: usize, regex: &Regex, regexps: &Vec<Regex>) -> (Option<String>, Option<String>) {
+    if start == 0 {
+        return (None, None);
+    }
+    let prev_tokens = token_splitter(all_lines[start - 1].clone(), regex, regexps);
+    let p1 = prev_tokens.last().cloned();
+    let p2 = if prev_tokens.len() >= 2 {
+        Some(prev_tokens[prev_tokens.len() - 2].clone())
+    } else {
+        None
+    };
+    (p1, p2)
+}
+
+fn process_dictionary_builder_line_concurrent(line: String, lookahead_line: Option<String>, regexp:&Regex, regexps:&Vec<Regex>, dbl: &DashMap<String, i32>, trpl: &DashMap<String, i32>, all_token_list: &mut Vec<String>, prev1: Option<String>, prev2: Option<String>) -> (Option<String>, Option<String>) {
+    let (next1, next2) = match lookahead_line {
+        None => (None, None),
+        Some(ll) => {
+            let next_tokens = token_splitter(ll, &regexp, &regexps);
+            match next_tokens.len() {
+                0 => (None, None),
+                1 => (Some(next_tokens[0].clone()), None),
+                _ => (Some(next_tokens[0].clone()), Some(next_tokens[1].clone()))
+            }
+        }
+    };
+
+    let mut tokens = token_splitter(line, &regexp, &regexps);
+    if tokens.is_empty() {
+        return (None, None);
+    }
+    tokens.iter().for_each(|t| if !all_token_list.contains(t) { all_token_list.push(t.clone()) } );
+
+    let last1 = match tokens.len() {
+        0 => None,
+        n => Some(tokens[n-1].clone())
+    };
+    let last2 = match tokens.len() {
+        0 => None,
+        1 => None,
+        n => Some(tokens[n-2].clone())
+    };
+
+    let mut tokens2_ = match prev1 {
+        None => tokens,
+        Some(x) => { let mut t = vec![x]; t.append(&mut tokens); t}
+    };
+    let mut tokens2 = match next1 {
+        None => tokens2_,
+        Some(x) => { tokens2_.push(x); tokens2_ }
+    };
+
+    for doubles in tokens2.windows(2) {
+        let double_tmp = format!("{}^{}", doubles[0], doubles[1]);
+	*dbl.entry(double_tmp).or_default() += 1;
+    }
+
+    let mut tokens3_ = match prev2 {
+        None => tokens2,
+        Some(x) => { let mut t = vec![x]; t.append(&mut tokens2); t}
+    };
+    let tokens3 = match next2 {
+        None => tokens3_,
+        Some(x) => { tokens3_.push(x); tokens3_ }
+    };
+    for triples in tokens3.windows(3) {
+        let triple_tmp = format!("{}^{}^{}", triples[0], triples[1], triples[2]);
+	*trpl.entry(triple_tmp).or_default() += 1;
+    }
+    return (last1, last2);
+}
+
+fn dictionary_builder_separate_maps(raw_fn: String, format: String, regexps: Vec<Regex>, num_threads: usize) -> (HashMap<String, i32>, HashMap<String, i32>, Vec<String>) {
+    let all_lines = read_all_lines(&raw_fn);
+    let n = all_lines.len();
+    if n == 0 {
+        return (HashMap::new(), HashMap::new(), vec![]);
+    }
+
+    let chunk_size = (n + num_threads - 1) / num_threads;
+
+    let results: Vec<_> = thread::scope(|s| {
+        let mut handles = vec![];
+        for i in 0..num_threads {
+            let start = i * chunk_size;
+            let end = std::cmp::min(start + chunk_size, n);
+            if start >= n {
+                break;
+            }
+            let format_clone = format.clone();
+            let all_lines = &all_lines;
+            let regexps = &regexps;
+
+            handles.push(s.spawn(move || {
+                let regex = regex_generator(format_clone);
+                let mut dbl = HashMap::new();
+                let mut trpl = HashMap::new();
+                let mut all_token_list = vec![];
+
+                let (mut prev1, mut prev2) = get_initial_prev(all_lines, start, &regex, regexps);
+
+                for j in start..end {
+                    let line = all_lines[j].clone();
+                    let lookahead = if j + 1 < all_lines.len() {
+                        Some(all_lines[j + 1].clone())
+                    } else {
+                        None
+                    };
+                    (prev1, prev2) = process_dictionary_builder_line(
+                        line, lookahead, &regex, regexps,
+                        &mut dbl, &mut trpl, &mut all_token_list,
+                        prev1, prev2,
+                    );
+                }
+
+                (dbl, trpl, all_token_list)
+            }));
+        }
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+
+    let mut final_dbl = HashMap::new();
+    let mut final_trpl = HashMap::new();
+    let mut final_token_list = vec![];
+
+    for (dbl, trpl, token_list) in results {
+        for (k, v) in dbl {
+            *final_dbl.entry(k).or_insert(0) += v;
+        }
+        for (k, v) in trpl {
+            *final_trpl.entry(k).or_insert(0) += v;
+        }
+        for t in token_list {
+            if !final_token_list.contains(&t) {
+                final_token_list.push(t);
+            }
+        }
+    }
+
+    (final_dbl, final_trpl, final_token_list)
+}
+
+fn dictionary_builder_concurrent_maps(raw_fn: String, format: String, regexps: Vec<Regex>, num_threads: usize) -> (HashMap<String, i32>, HashMap<String, i32>, Vec<String>) {
+    let all_lines = read_all_lines(&raw_fn);
+    let n = all_lines.len();
+    if n == 0 {
+        return (HashMap::new(), HashMap::new(), vec![]);
+    }
+
+    let chunk_size = (n + num_threads - 1) / num_threads;
+    let dbl: DashMap<String, i32> = DashMap::new();
+    let trpl: DashMap<String, i32> = DashMap::new();
+
+    let token_lists: Vec<Vec<String>> = thread::scope(|s| {
+        let mut handles = vec![];
+        for i in 0..num_threads {
+            let start = i * chunk_size;
+            let end = std::cmp::min(start + chunk_size, n);
+            if start >= n {
+                break;
+            }
+            let format_clone = format.clone();
+            let all_lines = &all_lines;
+            let regexps = &regexps;
+            let dbl = &dbl;
+            let trpl = &trpl;
+
+            handles.push(s.spawn(move || {
+                let regex = regex_generator(format_clone);
+                let mut all_token_list = vec![];
+
+                let (mut prev1, mut prev2) = get_initial_prev(all_lines, start, &regex, regexps);
+
+                for j in start..end {
+                    let line = all_lines[j].clone();
+                    let lookahead = if j + 1 < all_lines.len() {
+                        Some(all_lines[j + 1].clone())
+                    } else {
+                        None
+                    };
+                    (prev1, prev2) = process_dictionary_builder_line_concurrent(
+                        line, lookahead, &regex, regexps,
+                        dbl, trpl, &mut all_token_list,
+                        prev1, prev2,
+                    );
+                }
+
+                all_token_list
+            }));
+        }
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+
+    let mut final_token_list = vec![];
+    for token_list in token_lists {
+        for t in token_list {
+            if !final_token_list.contains(&t) {
+                final_token_list.push(t);
+            }
+        }
+    }
+
+    let final_dbl: HashMap<String, i32> = dbl.into_iter().map(|(k, v)| (k, v)).collect();
+    let final_trpl: HashMap<String, i32> = trpl.into_iter().map(|(k, v)| (k, v)).collect();
+
+    (final_dbl, final_trpl, final_token_list)
+}
+
+pub fn parse_raw(raw_fn: String, lf:&LogFormat, num_threads: usize, single_map: bool) -> (HashMap<String, i32>, HashMap<String, i32>, Vec<String>) {
     let num_threads = std::cmp::max(1, num_threads);
 
     let (double_dict, triple_dict, all_token_list) = if num_threads <= 1 {
@@ -303,7 +525,7 @@ pub fn parse_raw(raw_fn: String, lf:&LogFormat) -> (HashMap<String, i32>, HashMa
 
 #[test]
 fn test_parse_raw_linux() {
-    let (double_dict, triple_dict, all_token_list) = parse_raw("data/from_paper.log".to_string(), &Linux);
+    let (double_dict, triple_dict, all_token_list) = parse_raw("data/from_paper.log".to_string(), &Linux, 1, false);
     let all_token_list_oracle = vec![
         "hdfs://hostname/2kSOSP.log:21876+7292".to_string(),
         "hdfs://hostname/2kSOSP.log:14584+7292".to_string(),
