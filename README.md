@@ -31,14 +31,15 @@ cargo run --release -- --raw-openstack data/openstack_normal2.log --to-parse "no
 
 ___
 
-You can attempt your own implementation and benchmark it against mine:
+You can attempt your own implementation and benchmark it against mine
 
-Command used: (be sure to update --num-threads!!)
+**Command used:** (be sure to update --num-threads!!)
+
 ```
 hyperfine 'cargo run --release -- --raw-hpc data/HPC.log --to-parse "58717 2185 boot_cmd new 1076865186 1 Targeting domains:node-D1 and nodes:node-[40-63] child of command 2176" --before-line "58728 2187 boot_cmd new 1076865197 1 Targeting domains:node-D2 and nodes:node-[72-95] child of command 2177" --after-line "58707 2184 boot_cmd new 1076865175 1 Targeting domains:node-D0 and nodes:node-[0-7] child of command 2175" --cutoff 106 --single-map --num-threads=x'
 ```
 
-**My results (may vary machine to machine):**
+**My results:** (may vary machine to machine)
 
 **Benchmark 1:** --num-threads = 1
 
