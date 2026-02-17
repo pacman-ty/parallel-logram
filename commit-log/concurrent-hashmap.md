@@ -60,7 +60,8 @@ Range (min … max): 4.563 s … 4.654 s 10 runs
 
 **Benchmark 2:** --num-threads = 8 (default)
 
-Time (mean ± σ): 912.0 ms ± 17.9 ms [User: 3032.7 ms, System: 52.8 ms]
+Time (mean ± σ):     789.7 ms ±  14.1 ms    [User: 3190.1 ms, System: 56.1 ms]
 
-Range (min … max): 897.3 ms … 959.7 ms 10 runs
+Range (min … max):   771.5 ms … 809.5 ms    10 runs
+
 
