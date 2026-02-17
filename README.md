@@ -47,14 +47,15 @@ hyperfine 'cargo run --release -- --raw-hpc data/HPC.log --to-parse "58717 2185 
 
   Range (min … max):    4.563 s …  4.654 s    10 runs
 
-**Benchmark 2:** `--single-map --num-threads=8` (default)
+**Benchmark 2:** `--num-threads=8` 
+
+  Time (mean ± σ):     934.0 ms ±  21.1 ms    [User: 3150.4 ms, System: 51.3 ms]
+
+  Range (min … max):   915.3 ms … 978.8 ms    10 runs
+
+**Benchmark 3:** `--single-map --num-threads=8` 
 
   Time (mean ± σ):     912.0 ms ±  17.9 ms    [User: 3032.7 ms, System: 52.8 ms]
 
   Range (min … max):   897.3 ms … 959.7 ms    10 runs
 
-**Benchmark 2:** `--num-threads=8` (default)
-
-  Time (mean ± σ):     789.7 ms ±  14.1 ms    [User: 3190.1 ms, System: 56.1 ms]
-
-  Range (min … max):   771.5 ms … 809.5 ms    10 runs
